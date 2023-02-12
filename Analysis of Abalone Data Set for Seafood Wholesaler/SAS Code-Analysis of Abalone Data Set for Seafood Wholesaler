@@ -1,0 +1,318 @@
+ods html close; 
+options nodate nonumber leftmargin=1in rightmargin=1in;
+
+ods graphics on / width=4in height=4in;
+ods rtf file= '/home/u60721483/my_content/STAT448project/Deli Yang Final Project.rtf'
+	nogtitle startpage=no;
+ods noproctitle;
+ods startpage = no;
+
+data abalone;
+	infile "/home/u60721483/my_content/STAT448project/abalone.data" dlm=',';
+	input sex $ length diameter height whole_weight meat_weight gut_weight shell_weight rings;
+run;
+
+* Question 1;
+ods text="Question 1";
+* sort data by sex;
+proc sort data=abalone;
+by sex; 
+run; 
+
+* obtain a general descriptive overview;
+proc means data=abalone n mean max min range std;
+	var length -- shell_weight;
+	by sex;
+run;
+
+*proc tabulate data=abalone;
+*  class sex;
+*  var length -- shell_weight;
+*  table sex,
+*        length -- shell_weight*(mean std n);
+*run;
+
+* obtain a more specific descriptive overview;
+*PROC UNIVARIATE data=abalone;
+*  CLASS sex;
+*  VAR length -- shell_weight;
+*RUN; 
+
+* add new variable: size;
+data abalone;
+  set abalone;
+  size = length  --  height;
+run;
+
+*frequency;
+proc freq data=abalone;
+  tables size*sex/ nopercent norow nocol cellchi2 chisq;
+run;
+
+*normaility;
+* add univariate visualizations;
+proc univariate data=abalone;
+  var size;
+  by sex;
+  histogram size/ normal;
+  probplot size;
+  * add ods statement to just grab the plots;
+  ods select Histogram ProbPlot;
+run;
+
+proc univariate data=abalone normaltest;
+  var size;
+  by sex;
+  ods select TestsForNormality;
+run;
+
+proc npar1way data=abalone wilcoxon;
+  class sex;
+  var size;
+  ods exclude KruskalWallisTest;
+run;
+
+* add new variable: weight;
+data abalone;
+  set abalone;
+  weight = whole_weight  --  shell_weight;
+run;
+
+* frequency;
+proc freq data=abalone;
+  tables weight*sex/ nopercent norow nocol cellchi2 chisq;
+run;
+
+* normaility;
+* add univariate visualizations;
+proc univariate data=abalone;
+  var weight;
+  by sex;
+  histogram weight/ normal;
+  probplot weight;
+  * add ods statement to just grab the plots;
+  ods select Histogram ProbPlot;
+run;
+
+proc univariate data=abalone normaltest;
+  var weight;
+  by sex;
+  ods select TestsForNormality;
+run;
+
+proc npar1way data=abalone wilcoxon;
+  class sex;
+  var weight;
+  ods exclude KruskalWallisTest;
+run;
+
+* scatterplot;
+proc sgplot data=abalone;
+  scatter y=size x=weight /group=sex;
+  reg y=size x=weight/ nomarkers;
+run;
+
+* normality;
+*proc univariate data=abalone;
+*  var length -- shell_weight;
+*  histogram length -- shell_weight/ normal;
+*  probplot length -- shell_weight;
+*  by sex; 
+*  ods select Histogram ProbPlot GoodnessOfFit;
+*run;
+
+/* given the normality tests, we shouldn't trust a t-test;*/ 
+*proc npar1way data=abalone wilcoxon;
+*  class sex;
+*  var length -- shell_weight;
+*  ods exclude KruskalWallisTest;
+*run;
+
+
+* Question 2;
+ods text="Question 2";
+* sex which omits infants;
+*data abalone;
+*  set abalone;
+*  if sex  in ('I') then delete;
+*run;
+*proc logistic data=abalone desc;
+*	model sex = length -- whole_weight;
+*	ods select OddsRatios ParameterEstimates 
+		GlobalTests ModelInfo FitStatistics;
+*run;
+
+data abalone_log;
+	set abalone;	
+	if sex = "M" then sex_num=0;
+	if sex = "F" then sex_num=1;
+run;
+
+* logistic regression;
+proc logistic data=abalone_log;
+	model sex_num = length -- whole_weight;
+	ods select OddsRatios ParameterEstimates 
+		GlobalTests ModelInfo FitStatistics;
+run;
+
+* obtain the best model;
+proc logistic data=abalone_log;
+	model sex_num = length -- whole_weight/
+		selection=stepwise;	
+	ods select OddsRatios ParameterEstimates 
+		GlobalTests ModelInfo FitStatistics;
+run;
+
+*proc logistic data=abalone;
+*	model sex = length -- whole_weight/
+		selection=backward;
+*	where sex ne 'I';	
+*	ods select OddsRatios ParameterEstimates 
+		GlobalTests ModelInfo FitStatistics;
+*run;
+
+
+* Question 3;
+ods text="Question 3";
+/* use stepwise selection to extract most significant explanatory variables */
+proc stepdisc data=abalone sle=.05 sls=.05;
+  	class sex;
+  	var length -- shell_weight;
+	ods select Summary;
+run;
+
+/* use leave-one-out cross-validation */
+proc discrim data=abalone pool=test crossvalidate manova;
+  	class sex;
+  	var diameter gut_weight meat_weight	height 	length whole_weight;
+  	priors proportional;
+	ods select ChiSq MultStat ClassifiedCrossVal ErrorCrossVal;
+run;
+
+
+* Question 4;
+ods text="Question 4";
+
+data abalone_num;
+	set abalone;	
+	if sex = "I" then sex_num=0;
+	if sex = "F" then sex_num=1;
+	if sex = "M" then sex_num=2;
+run;
+
+* pairwise scatter plot;
+proc sgscatter data=abalone_num;
+	matrix  sex_num meat_weight length diameter height whole_weight rings;
+run;
+
+* stepwise results;
+proc reg data=abalone_num;
+	model meat_weight = length diameter	height whole_weight rings sex_num / selection=stepwise sle=.05 sls=.05;
+	ods select SelectionSummary;
+run;
+
+proc reg data=abalone_num;
+	model meat_weight = length diameter	height whole_weight rings sex_num / vif;
+	ods select ANOVA FitStatistics ParameterEstimates DiagnosticsPanel;
+	output out=abalone_out CookD=cd;
+run;
+
+/*make adjustment based on the Cook's distance, compare the AIC and the R-squared*/
+proc reg data=abalone_out;
+    model meat_weight = length diameter	height whole_weight rings sex_num / vif;
+    where cd<0.01;
+    *ods select ANOVA ParameterEstimates FitStatistics DiagnosticsPanel;
+run;
+
+
+
+* Question 5;
+ods text="Question 5";
+
+* new dataset with unique id for each observation;
+data abalone_id;
+set abalone;
+id=_n_;
+run;
+
+* use univariate analysis to identify extreme observations;
+proc univariate data=abalone_id;
+  var length -- shell_weight;
+  id id;
+  ods select ExtremeObs;
+run;
+
+* remove observations which are deemed extreme on several variables;
+data abalone_re;
+  set abalone_id;
+  if id not in('237','239','2115','238','421','1210','1429','2335','1764','1430','1347','1349','1732','3299','1348','3012'
+  '3417','4009','735','471','2008','404','669','3181','621','2718','383','1470'
+  ,'2544','4008','3224','3685','2409','3298','74','660','3427','72','1460','3920');
+run;
+
+* diagnostics;
+ods graphics on / DISCRETEMAX=5000;
+proc cluster data=abalone_re method=average ccc std pseudo print=15 plots=all outtree=average plots(maxpoints=5000);
+  var length -- shell_weight;
+  copy sex;
+  ods select ClusterHistory Dendrogram CccPsfAndPsTSqPlot CubicClusCritPlot;
+run;
+ods graphics off ;
+
+proc tree data=average out=clusters n=6 noprint;
+  copy length -- shell_weight sex;
+run;
+
+proc sort data=clusters;
+ by cluster;
+run;
+
+proc means data=clusters;
+ var length -- shell_weight;
+ by cluster;
+run;
+
+* cross-tabulation to see how well clusters match up with sexes;
+proc freq data=clusters;
+  tables cluster*sex/ nopercent norow nocol;
+run;
+
+* perform principal components analysis on cluster data to extract 2 most prominent features;
+proc princomp data=clusters n=2 out=pcout;
+  var length -- shell_weight;
+run;
+
+* visualize the data points in the first two principal 
+  coordinates and see where the clustered values are in this space;
+proc sgplot data=pcout;
+  scatter y=prin1 x=prin2 / markerchar=cluster;
+run;
+
+data clusters_num;
+	set clusters;	
+	if sex = "I" then sex_num=0;
+	if sex = "F" then sex_num=1;
+	if sex = "M" then sex_num=2;
+run;
+
+* visualize the distribution of sex by cluster;
+proc sgplot data=clusters_num;
+  vbox sex_num / category=cluster;
+run;
+* perform an analysis of variance on sex as a function of cluster;
+proc anova data=clusters_num;
+  class cluster;
+  model sex_num=cluster;
+  means cluster/ hovtest cldiff tukey;
+  ods select OverallANOVA CLDiffs HOVFTest;
+run;
+* nonparametric tests to avoid normality assumption;
+* use the Dwass, Steel, Critchlow-Fligner multiple comparison procedure for multiple comparisons in nonparametric 1-way ANOVA;
+proc npar1way data=clusters_num wilcoxon DSCF;
+	class cluster;
+  	var sex_num;
+run;
+
+
+
+ods rtf close;
